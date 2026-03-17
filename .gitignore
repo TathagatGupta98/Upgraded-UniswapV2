@@ -1,0 +1,39 @@
+# Foundry build artifacts
+out/
+cache/
+broadcast/
+
+# Foundry coverage
+lcov.info
+coverage/
+
+# Dependencies (managed via git submodules / forge install)
+lib/forge-std/
+lib/openzeppelin-contracts/
+lib/solady/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node (for package.json tooling)
+node_modules/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Slither / static analysis
+.slither/
+slither.db.json
+
+# Hardhat (if ever mixed)
+artifacts/
+typechain-types/

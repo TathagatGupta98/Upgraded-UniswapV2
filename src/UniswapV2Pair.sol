@@ -45,12 +45,13 @@ contract UniswapV2Pair is UniswapV2ERC20{
     error UniswapV2Pair__InvalidAddress();
     error UniswapV2Pair__InvalidInputAmount();
     error UniswapV2Pair__InvalidAMMProduct();
+    error UniswapV2__Overflow();
 
 /* ----------------------------- STATE VARIABLES ---------------------------- */
 
     uint256 private reserve0; //private variables retrieved using getter functions. 
     uint256 private reserve1; // Can later be used by user of the portocol to access the latest data pf the reserves.
-    uint256 private lastBlockTimeStamp;
+    uint256 private blockTimeStampLast;
 
     address public token0;
     address public token1;
@@ -66,7 +67,7 @@ contract UniswapV2Pair is UniswapV2ERC20{
     );
 
 /* ------------------------------- CONSTRUCTOR ------------------------------ */
-    constructor(address _token0, address _token1, uint256 _lastBlockTimeStamp){
+    constructor(address _token0, address _token1, uint256 _blockTimeStampLast){
         token0 = _token0;
         token1 = _token1;
     }
@@ -89,7 +90,7 @@ contract UniswapV2Pair is UniswapV2ERC20{
             revert UniswapV2Pair__InvalidAmountDemanded();
         }
 
-        (uint256 _reserve0, uint256 _reserve1, uint256 _lastBlockTimeStamp) = getReserves();
+        (uint256 _reserve0, uint256 _reserve1, uint256 _blockTimeStampLast) = getReserves();
         if(amount0Out>_reserve0 || amount1Out>_reserve1){
             revert UniswapV2Pair__NotEnoughLiquidityAvailable();
         }
@@ -113,6 +114,28 @@ contract UniswapV2Pair is UniswapV2ERC20{
         emit Swap(msg.sender, balance0, balance1, amount0Out, amount1Out, to);
     }
 
+    function update(uint256 balance0, uint256 balance1, uint256 _reserve0, uint256 _reserve1) private {
+
+        reserve0 = balance0;
+        reserve1 = balance1;
+
+        unchecked {
+            uint32 blockTimestamp = uint32(block.timestamp % 2 ** 32);
+            uint32 timeElapsed = blockTimestamp - blockTimestampLast;
+
+            if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
+                price0CumulativeLast += (_reserve1 * 2 ** 112 / _reserve0) * timeElapsed;
+                price1CumulativeLast += (_reserve0 * 2 ** 112 / _reserve1) * timeElapsed;
+            }
+
+            blockTimestampLast = blockTimestamp;
+        }
+
+        emit Sync(reserve0, reserve1);
+    }
+
+
+
 /* -------------------------- VIEW & PURE FUNCTIONS ------------------------- */
     function verifySwap(uint256 balance0,uint256 balance1, uint256 _reserve0, uint256 _reserve1, uint256 amount0Out,uint256 amount1Out) private pure {
 
@@ -135,10 +158,10 @@ contract UniswapV2Pair is UniswapV2ERC20{
         }
     }
 
-    function getReserves() public returns(uint256 _reserve0, uint256 _reserve1, uint256 _lastBlockTimeStamp) {
+    function getReserves() public returns(uint256 _reserve0, uint256 _reserve1, uint256 _blockTimeStampLast) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
-        lastBlockTimeStamp = _lastBlockTimeStamp;
+        blockTimeStampLast = _blockTimeStampLast;
     }
 
 }

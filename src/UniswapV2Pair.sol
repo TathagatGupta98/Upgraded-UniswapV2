@@ -25,7 +25,7 @@
 pragma solidity ^0.8.30;
 
 /* --------------------------------- IMPORTS -------------------------------- */
-import {ERC20} from "./UniswapV2ERC20.sol";
+import {UniswapV2ERC20} from "./UniswapV2ERC20.sol";
 import {SafeTransferLib} from "../lib/solady/src/utils/SafeTransferLib.sol";
 
 /* -------------------------------------------------------------------------- */
@@ -43,6 +43,8 @@ contract UniswapV2Pair is UniswapV2ERC20{
     error UniswapV2Pair__InvalidAmountDemanded();
     error UniswapV2Pair__NotEnoughLiquidityAvailable();
     error UniswapV2Pair__InvalidAddress();
+    error UniswapV2Pair__InvalidInputAmount();
+    error UniswapV2Pair__InvalidAMMProduct();
 
 /* ----------------------------- STATE VARIABLES ---------------------------- */
 
@@ -52,6 +54,16 @@ contract UniswapV2Pair is UniswapV2ERC20{
 
     address public token0;
     address public token1;
+
+/* --------------------------------- EVENTS --------------------------------- */
+    event Swap(
+        address indexed sender,
+        uint balance0,
+        uint balance1,
+        uint amount0Out,
+        uint amount1Out,
+        address indexed to
+    );
 
 /* ------------------------------- CONSTRUCTOR ------------------------------ */
     constructor(address _token0, address _token1, uint256 _lastBlockTimeStamp){
@@ -69,32 +81,61 @@ contract UniswapV2Pair is UniswapV2ERC20{
  *  This function checked checked if there is no return value or return values is a garbage value(USDT).
  *  I am using Solady's safeTransferLib which checks for the aabove and also memory extension attacks,
  *  it is also gas optimized.
+ * @notice The swap function does not transfer tokens from your account on its own. 
+ * It later checks if the amountIn were deposited to the reserve has increased by that amount.
  */
-    function swap(uint amount0Out, uint amount1Out, address to) public {
-        if(amount0Out<0 || amount1Out<0 ){
-            revert UniswapV2Pair__InvalidAmountDemanded();
-        }
+    function swap(uint256 amount0Out, uint256 amount1Out, address to) public {
         if(amount0Out==0 && amount1Out==0){
             revert UniswapV2Pair__InvalidAmountDemanded();
         }
 
-        (uint256 _reserve0, uint256 _reserve1) = getReserves();
-        if(amount0Out>reserve0 || amount1Out>reserve1){
+        (uint256 _reserve0, uint256 _reserve1, uint256 _lastBlockTimeStamp) = getReserves();
+        if(amount0Out>_reserve0 || amount1Out>_reserve1){
             revert UniswapV2Pair__NotEnoughLiquidityAvailable();
         }
+
+        uint256 balance0;
+        uint256 balance1;
 
         address _token0 = token0; //only read the token addresses state once.
         address _token1 = token1;
         if(to == _token0 || to == _token1){
             revert UniswapV2Pair__InvalidAddress();
         }
-        SafeTransferLib.safetransfer(token0, to, amount0Out);
-        SafeTransferLib.safetransfer(token1, to, amount1Out);
+        SafeTransferLib.safeTransfer(token0, to, amount0Out);
+        SafeTransferLib.safeTransfer(token1, to, amount1Out);
 
+        balance0 = SafeTransferLib.balanceOf(token0, address(this));
+        balance1 = SafeTransferLib.balanceOf(token1, address(this));
+
+        verifySwap(balance0, balance1, _reserve0, _reserve1, amount0Out, amount1Out);
+
+        emit Swap(msg.sender, balance0, balance1, amount0Out, amount1Out, to);
     }
 
 /* -------------------------- VIEW & PURE FUNCTIONS ------------------------- */
-    function getReserves() public returns(uint256 _reserve0, uint256 _reserve1) {
+    function verifySwap(uint256 balance0,uint256 balance1, uint256 _reserve0, uint256 _reserve1, uint256 amount0Out,uint256 amount1Out) private pure {
+
+        uint256 amount0In = balance0 > _reserve0 - amount0Out
+            ? balance0 - (_reserve0 - amount0Out)
+            : 0;
+        uint256 amount1In = balance1 > _reserve1 - amount1Out
+            ? balance1 - (_reserve1 - amount1Out)
+            : 0;
+
+        if (amount0In == 0 && amount1In == 0) {
+            revert UniswapV2Pair__InvalidInputAmount();
+        }
+
+        uint256 balance0Adjusted = (balance0 * 1000) - (amount0In * 3);
+        uint256 balance1Adjusted = (balance1 * 1000) - (amount1In * 3);
+
+        if (balance0Adjusted * balance1Adjusted < _reserve0 * _reserve1 * 1_000_000) {
+            revert UniswapV2Pair__InvalidAMMProduct();
+        }
+    }
+
+    function getReserves() public returns(uint256 _reserve0, uint256 _reserve1, uint256 _lastBlockTimeStamp) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
         lastBlockTimeStamp = _lastBlockTimeStamp;
